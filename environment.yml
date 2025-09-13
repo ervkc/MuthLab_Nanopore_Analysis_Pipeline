@@ -1,9 +1,0 @@
-name: bio-env
-channels:
-- bioconda
-- conda-forge
-- defaults
-dependencies:
-- openjdk=11
-- nextflow
-- samtools
