@@ -24,7 +24,7 @@ process basecall_custom {
 	output:
 	file "${output_bam}"
 	
-	publishDir "${params.output_dir}", mode: 'move'
+	publishDir "${params.output_dir}", mode: 'copy'
 	
 	script:
 	"""
@@ -46,7 +46,7 @@ process basecall_kit {
 	output:
 	file "${output_bam}"
 
-	publishDir "${params.output_dir}", mode: 'move'
+	publishDir "${params.output_dir}", mode: 'copy'
 
 	script:
 	"""
@@ -64,7 +64,7 @@ process samtools_filter {
         output:
         file "*.bam"	
                  
-        publishDir "${params.output_dir}", mode: 'move'
+        publishDir "${params.output_dir}", mode: 'copy'
         
         script:        
     """
@@ -92,7 +92,7 @@ process demux {
 	output:
 	path 'bams'
 	
-    	publishDir "${params.output_dir}", mode: 'move'
+    	publishDir "${params.output_dir}", mode: 'copy'
 
 	script:
 	"""
@@ -110,7 +110,7 @@ process bam_to_fastq {
 	output: 
 	path "fastqs" 
 	
-	publishDir "${params.output_dir}", mode: 'move'
+	publishDir "${params.output_dir}", mode: 'copy'
 	
 	script: 
 	""" 
@@ -141,7 +141,7 @@ process create_visualizations {
     path 'visualizations/Non_weightedHistogramReadlength.html'
     path 'visualizations/NanoComp_quals_violin.html'
 
-	publishDir "${params.output_dir}", mode: 'move'
+	publishDir "${params.output_dir}", mode: 'copy'
 
 	script:
 	"""
