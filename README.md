@@ -16,7 +16,7 @@ this repository is meant to help facilitate ...
 
 #### b. GUI based way
 
-## **3. Execute Makefile **  
+## **3. Execute Makefile**  
 
 
 
