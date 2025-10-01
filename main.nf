@@ -1,5 +1,5 @@
 params.using_custom = true
-params.dorado_path = '/home/exouser/MuthLab_Nanopore_Analysis_Pipeline/dorado/bin/dorado'
+params.dorado_path = "${workflow.projectDir}/dorado/bin/dorado"
 
 params.output_bam = 'run_output.bam'
 
@@ -24,7 +24,7 @@ process basecall_custom {
 	output:
 	file "${output_bam}"
 	
-	publishDir "${params.output_dir}", mode: 'copy'
+	publishDir "${params.output_dir}", mode: 'move'
 	
 	script:
 	"""
@@ -46,7 +46,7 @@ process basecall_kit {
 	output:
 	file "${output_bam}"
 
-	publishDir "${params.output_dir}", mode: 'copy'
+	publishDir "${params.output_dir}", mode: 'move'
 
 	script:
 	"""
@@ -64,7 +64,7 @@ process samtools_filter {
         output:
         file "*.bam"	
                  
-        publishDir "${params.output_dir}", mode: 'copy'
+        publishDir "${params.output_dir}", mode: 'move'
         
         script:        
     """
@@ -92,7 +92,7 @@ process demux {
 	output:
 	path 'bams'
 	
-    	publishDir "${params.output_dir}", mode: 'copy'
+    	publishDir "${params.output_dir}", mode: 'move'
 
 	script:
 	"""
@@ -110,7 +110,7 @@ process bam_to_fastq {
 	output: 
 	path "fastqs" 
 	
-	publishDir "${params.output_dir}", mode: 'copy'
+	publishDir "${params.output_dir}", mode: 'move'
 	
 	script: 
 	""" 
@@ -135,30 +135,26 @@ process create_visualizations {
 	path fastq_dir
 
 	output:
-    path 'visualizations/LengthvsQualityScatterPlot_dot.png', emit: scatter_plot
-    path 'visualizations/NanoStats.txt', emit: nano_stats
-    path 'visualizations/NanoComp_lengths_violin.png', emit: lengths_violin
-    path 'visualizations/Non_weightedHistogramReadlength.png', emit: length_histogram
-    path 'visualizations/NanoComp_quals_violin.png', emit: quals_violin
+    path 'visualizations/LengthvsQualityScatterPlot_dot.html'
+    path 'visualizations/NanoStats.txt'
+    path 'visualizations/NanoComp_lengths_violin.html'
+    path 'visualizations/Non_weightedHistogramReadlength.html'
+    path 'visualizations/NanoComp_quals_violin.html'
 
-	publishDir "${params.output_dir}", mode: 'copy'
+	publishDir "${params.output_dir}", mode: 'move'
 
 	script:
 	"""
 	mkdir -p visualizations
-
-	NanoPlot \\
-	--fastq ${fastq_dir}/*.fastq.gz \\
-	--outdir visualizations \\
-	--plots dot
-
-NAMES=""
+	
+	if [ -f "${fastq_dir}/unclassified.fastq.gz" ]; then
+    		rm "${fastq_dir}/unclassified.fastq.gz"
+    	fi
+	
+	NAMES=""
 for file in fastqs/*.fastq.gz; do
     basename=\$(basename "\$file" .fastq.gz)
     barcode_num=\$(echo "\$basename" | grep -o 'barcode[0-9]*' | sed 's/barcode//')
-    if [ -z "\$barcode_num" ]; then
-        barcode_num="unclassified"
-    fi
 
     if [ -z "\$NAMES" ]; then
         NAMES="\$barcode_num"
@@ -166,11 +162,21 @@ for file in fastqs/*.fastq.gz; do
         NAMES="\$NAMES \$barcode_num"
     fi
 done
+
+	
+	NanoPlot \\
+	--fastq ${fastq_dir}/*.fastq.gz \\
+	--outdir visualizations \\
+	--plots dot \\
+	--no_static \\
+	--no_supplementary
+
     NanoComp \\
         --fastq ${fastq_dir}/*.fastq.gz \\
         --outdir visualizations \\
         --plot violin \\
         --names \$NAMES
+
     """
 }
 
@@ -200,4 +206,3 @@ workflow {
 	bam_to_fastq_out = bam_to_fastq(demux_out)
 	create_visualizations(bam_to_fastq_out)     
 }
-
