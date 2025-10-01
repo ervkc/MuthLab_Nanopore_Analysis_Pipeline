@@ -7,18 +7,19 @@ this repository is meant to help facilitate ...
 #### a. using command line
 `git init ... `
 
-#### b. using github
+#### b. using github GUI
 (guide through GUI-based way)
 
-## **2. Create a Conda Environment and Activate it**  
-    
-### i. `cd MuthLab_Nanopore_Analysis_Pipeline`
-### ii.  `conda create env -f env.yml`
-### iii. `conda activate pipeline_env`
+## **2. Set your working directory to this repository**
+#### a. using command line
+`cd ... `
 
-## **3. Install Dorado via bash script (and other dependencies, TBD)**  
+#### b. GUI based way
 
-## **4. Run Shiny app via R**
+## **3. Execute Makefile **  
+
+
+
 
    
 # To-Do
