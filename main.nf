@@ -4,8 +4,8 @@ params.dorado_path = "${workflow.projectDir}/dorado/bin/dorado"
 params.output_bam = 'run_output.bam'
 
 // talked about keeping arrangement and sequence files on the backend
-params.barcode_arrangement = '/home/exouser/MuthLab_Nanopore_Analysis_Pipeline/data/Example_Data/Example_Data_Custom_Barcodes/code/7.21.25_NBD_custom_arrangement.toml'
-params.barcode_sequences = '/home/exouser/MuthLab_Nanopore_Analysis_Pipeline/data/Example_Data/Example_Data_Custom_Barcodes/code/7.21.25_NBD_custom_96_barcodes.fasta'
+params.barcode_arrangement = null
+params.barcode_sequences = null
 
 params.run_name = params.run_name ?: "${workflow.start.format('MM-dd-yyyy_HH.mm.ss')}_run"
 params.output_dir = "pipeline_results/${params.run_name}"
@@ -198,7 +198,7 @@ workflow {
  		basecall_out = basecall_kit(params.model_acc, 
  			params.kit_name, 
  			params.output_bam, 
- 			params.output_dir)
+ 			params.pod5_dir)
  		}
  			
 	samtools_filter_out = samtools_filter(basecall_out, params.min, params.max)
