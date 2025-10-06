@@ -1,325 +1,208 @@
-library(shiny)
-library(shinyFiles)
-library(yaml) 
-library(fs)
+params.using_custom = true
+params.dorado_path = "${workflow.projectDir}/dorado/bin/dorado"
 
-## ==== pipeine UI ====
-ui_pipeline <- fluidPage(
-  fluidRow(
-    column(
-      width = 3,
-      ## ---- pipeline controls ----
-      wellPanel(
-        tags$p(tags$b("Select your output directory")),
-        shinyDirButton(id = "output_dir", label = "output", title = "Select an output directory"),
-        textOutput("output_dir_status"),
-        tags$br(),
-        
-        tags$p(tags$b("Select your pod5 directory")),
-        shinyDirButton(id = "pod5_dir", label = "pod5", title = "Select directory containing your .pod5 files"),
-        textOutput("pod5_dir_status"),
-        tags$br(),
-        
-        checkboxInput("using_custom",
-                      HTML("<--- Click if you are using a custom basecalling arrangement"),
-                      value = FALSE),
-        
-        conditionalPanel(
-          condition = "input.using_custom == true",
-          tags$p(tags$b("Select your barcode arrangement file")),
-          shinyFilesButton("toml_file", label = "(.toml)", title = "Select your barcode arrangement file" , multiple = FALSE),
-          textOutput("toml_file_status"),
-          tags$br(),
-          
-          tags$p(tags$b("Select your barcode sequencing file")),
-          shinyFilesButton("fasta_file", label = "(.fasta)", title = "Select your barcode sequencing file", multiple = FALSE),
-          textOutput("fasta_file_status"),
-          tags$br()
-        ),
-        
-        selectInput("model_acc", "Select a model accuracy for Dorado",
-                    choices = c("sup", "fast", "hac")),
-        
-        conditionalPanel(
-          condition = "input.using_custom == false",
-          helpText("Commonly used kits:",
-                   tags$br(),
-                   "Kit Name: ...",
-                   tags$br(),
-                   "Kit Name: ...",
-                   tags$br(),
-                   "Kit Name: ...")
-        ),
-        
-        textInput("kit_name", "Input kit name"),
-        
-        numericInput("min", "Input a minimum value for length filtering", value = NULL),
-        numericInput("max", "Input a maximum value for length filtering (optional)", value = NULL),
-        
-        actionButton("run_pipeline", "Run Pipeline")
-      ),
-      
-      tags$br(), tags$br(),
-      
-      ## ---- visualization controls ----
-      wellPanel(
-        tags$p(tags$b("Generate Visualizations from Existing FASTQ")),
-        
-        actionButton("generate_viz", "Generate Summary Visualizations"),
-        
-        conditionalPanel(
-          condition = "input.generate_viz > 0",
-          tags$br(),
-          shinyDirButton("fastq_dir", "Select FASTQ Directory", title = "Choose FASTQ directory"),
-          textOutput("fastq_dir_status")
-        ),
-        
-        uiOutput("generate_visualizations_ui")
-      )
-    ),
-    
-    ## ---- terminal screen ----
-    column(
-      width = 9,
-      tags$h4("Pipeline Output:"),
-      verbatimTextOutput("pipeline_output")  
-    )
-  )
-)
+params.output_bam = 'run_output.bam'
+
+// talked about keeping arrangement and sequence files on the backend
+params.barcode_arrangement = null
+params.barcode_sequences = null
+
+params.run_name = params.run_name ?: "${workflow.start.format('MM-dd-yyyy_HH.mm.ss')}_run"
+params.output_dir = "pipeline_results/${params.run_name}"
 
 
-## ==== visualize UI ====
-ui_visualize <- fluidPage(
-  uiOutput("plot1"),
-  uiOutput("plot2"),
-  uiOutput("plot3"),
-  uiOutput("plot4"),
-  
-  tags$hr(),
-  
-  fluidRow(
-    column(
-      width = 12,
-      tags$h4("NanoStats Summary"),
-      verbatimTextOutput("nanostats_txt")
-    )
-  )
-)
+process basecall_custom {
 
+	input:
+    	val model_acc
+	val kit_name
+	val output_bam		
+	path pod5_dir
+	path barcode_arrangement
+	path barcode_sequences
 
-## ==== combined UI ====
-ui <- fluidPage(
-  titlePanel("Muth Lab Nanopore Analysis Pipeline"),
-  tabsetPanel(
-    id = "main_tabs",  
-    type = "tabs",
-    selected = "Pipeline",
-    tabPanel("Pipeline", ui_pipeline),
-    tabPanel("Visualizations", ui_visualize)
-  )
-  
-)
-
-## ==== Server ====
-server <- function(input, output, session) {
-  ## ==== path resolutions and pre-defining ====
-  visualization_path <- reactiveVal(NULL)
-  
-  observeEvent(visualization_path(), {
-    req(visualization_path())
-    addResourcePath("visualization", visualization_path())
-  })
-  
-  volumes <- c(
-    "home" = fs::path_home(),
-    "MuthLab_Nanopore_Analysis_Pipeline" = getwd(),
-    "Root" = "/"
-  )
-  
-  ## defining file/directory choosers
-  shinyDirChoose(input, "output_dir", roots = volumes, session = session)
-  shinyDirChoose(input, "pod5_dir", roots = volumes, session = session)
-  shinyDirChoose(input, "fastq_dir", roots = volumes, session = session)
-  
-  
-  observe({
-    if (isTRUE(input$using_custom)) {
-      shinyFileChoose(input, "toml_file", roots = volumes, session = session, filetypes = c('', 'toml'))
-      shinyFileChoose(input, "fasta_file", roots = volumes, session = session, filetypes = c('', 'fasta'))
-    }
-  })
-  
-  ## path resolving for selected files/directories
-  output_dir_path <- reactive({ req(input$output_dir); parseDirPath(volumes, input$output_dir) })
-  pod5_dir_path   <- reactive({ req(input$pod5_dir);   parseDirPath(volumes, input$pod5_dir) })
-  fastq_dir_path  <- reactive({ req(input$fastq_dir);  parseDirPath(volumes, input$fastq_dir) })
-  toml_file_path  <- reactive({ req(input$toml_file);  parseFilePaths(volumes, input$toml_file)$datapath })
-  fasta_file_path <- reactive({ req(input$fasta_file); parseFilePaths(volumes, input$fasta_file)$datapath })
-  
-  ## confirmation text for files/directories
-  output$output_dir_status <- renderText({ req(output_dir_path()); paste("Selected output directory:", output_dir_path()) })
-  output$pod5_dir_status <- renderText({ req(pod5_dir_path()); paste("Selected pod5 directory:", pod5_dir_path()) })
-  output$fastq_dir_status <- renderText({ req(fastq_dir_path()); paste("Selected fastq directory:", fastq_dir_path()) })
-  output$toml_file_status <- renderText({ req(toml_file_path()); paste("Selected .toml file:", toml_file_path()) })
-  output$fasta_file_status <- renderText({ req(fasta_file_path()); paste("Selected .fasta file:", fasta_file_path()) })
-  
-  ## ==== trigger pipeline run when button is clicked ====
-  observeEvent(input$run_pipeline, {
-    ## takes user input and saves to variable
-    out_dir <- output_dir_path()
-    pod5_dir <- pod5_dir_path()
-    run_name <- paste0(format(Sys.time(), "%m-%d_%H.%M.%S", tz = "UTC"), "_run")
-    
-    toml_path <- if (isTRUE(input$using_custom)) toml_file_path() else NULL
-    fasta_path <- if (isTRUE(input$using_custom)) fasta_file_path() else NULL
-    
-    model_acc <- input$model_acc
-    kit_name <- input$kit_name
-    minimum <- input$min
-    maximum <- input$max
-    
-    ## writes saved variable to yml file
-    params_list <- list(
-      using_custom = isTRUE(input$using_custom),
-      model_acc = model_acc,
-      kit_name = kit_name,
-      min = minimum,
-      max = maximum,
-      output_dir = file.path(out_dir, run_name),
-      pod5_dir = pod5_dir,
-      barcode_arrangement = toml_path,
-      barcode_sequences = fasta_path,
-      run_name = run_name
-    )
-    
-    yaml::write_yaml(params_list, file = "params.yml")
-    
-    ## runs nextflow script, with messages before and after
-    notification <- showNotification("Pipeline running ...", type = "message", duration = NULL)
-    result <- system2("nextflow", args = c("run", "main.nf", "-params-file", "params.yml"), stdout = TRUE, stderr = TRUE)
-    
-    removeNotification(notification)
-    showModal(modalDialog(
-      title = "Pipeline Complete",
-      "Results available in selected directory, and summary visualizations available in visualization tab",
-      easyClose = TRUE,
-      footer = NULL
-    ))
-    
-    ## saves path to variable for access in visualize tab
-    vis_path <- file.path(out_dir, run_name, "visualizations")
-    if (dir.exists(vis_path)) {
-      visualization_path(vis_path)
-      addResourcePath("visualization", vis_path)
-    }
-    
-    
-    ## terminal output
-    output$pipeline_output <- renderText({ paste(result, collapse = "\n") })
-  })
-  
-  
-  
-  
-  ## ==== trigger visualization generation when button is clicked ====
-  observeEvent(fastq_dir_path(), {
-    req(fastq_dir_path())
-    
-    notification <- showNotification("Generating FASTQ visualizations ...", type = "message", duration = NULL)
-    result <- system2("nextflow",
-                      args = c("run", "main.nf", "-entry", "visualize", "--fastq_dir", fastq_dir_path()),
-                      stdout = TRUE, stderr = TRUE)
-    
-    removeNotification(notification)
-    showModal(modalDialog(
-      title = "FASTQ Visualizations Complete",
-      "Summary visualizations have been successfully generated.",
-      easyClose = TRUE,
-      footer = NULL
-    ))    
-    
-    ## searches for visualization file recursively, since nextflow entry doesn't have a output_dir parameter
-    results_dir <- file.path(getwd(), "pipeline_results")
-    subdirs <- list.dirs(results_dir, full.names = TRUE, recursive = FALSE)
-    
-    if (length(subdirs) > 0) {
-      latest_dir <- subdirs[which.max(file.info(subdirs)$mtime)]
-      vis_path <- file.path(latest_dir, "visualizations")
-      visualization_path(vis_path)
-      
-      output$pipeline_output <- renderText({ paste(result, collapse = "\n") })
-    }
-    
-    ## terminal output
-    output$pipeline_output <- renderText({ paste(result, collapse = "\n") })
-    
-    ## automatically changes to the visualization tab upon visualization generation
-    updateTabsetPanel(session, "Visualizations", selected = NULL)
-    
-  })
-  
-  ## ==== nanocomp/nanostats/nanoplot output ====
-  output$plot1 <- renderUI({
-    req(visualization_path())
-    tags$iframe(
-      src = "visualization/LengthvsQualityScatterPlot_dot.html",
-      width = "100%",
-      height = "600px",
-      style = "border: none;"
-    )
-  })
-  
-  output$plot2 <- renderUI({
-    req(visualization_path())
-    tags$iframe(
-      src = "visualization/NanoComp_lengths_violin.html",
-      width = "100%",
-      height = "600px",
-      style = "border: none;"
-    )
-  })
-  
-  output$plot3 <- renderUI({
-    req(visualization_path())
-    tags$iframe(
-      src = "visualization/NanoComp_quals_violin.html",
-      width = "100%",
-      height = "600px",
-      style = "border: none;"
-    )
-  })
-  
-  output$plot4 <- renderUI({
-    req(visualization_path())
-    tags$iframe(
-      src = "visualization/Non_weightedHistogramReadlength.html",
-      width = "100%",
-      height = "600px",
-      style = "border: none;"
-    )
-  })
-  
-  output$nanostats_txt <- renderText({
-    vis_path <- visualization_path()
-    req(vis_path)
-    
-    txt_file <- file.path(vis_path, "NanoStats.txt")
-    
-    lines <- readLines(txt_file)
-    
-    cutoff_index <- which(grepl("^Top 5", lines))[1]
-    
-    if (is.na(cutoff_index)) {
-      return(paste(lines, collapse = "\n"))
-    }
-    
-    summary_lines <- lines[1:(cutoff_index - 1)]
-    paste(summary_lines, collapse = "\n")
-    
-  })
+	output:
+	file "${output_bam}"
+	
+	publishDir "${params.output_dir}", mode: 'copy'
+	
+	script:
+	"""
+	${params.dorado_path} basecaller ${model_acc} ${pod5_dir} \\
+	--barcode-arrangement ${barcode_arrangement} \\
+	--barcode-sequences  ${barcode_sequences} \\
+	--kit-name ${kit_name} > ${output_bam}
+	"""
 }
 
+process basecall_kit {
 
+	input:
+	val model_acc
+	val kit_name
+	val output_bam 	
+	path pod5_dir	
+	
+	output:
+	file "${output_bam}"
 
-shinyApp(ui = ui, server = server)
+	publishDir "${params.output_dir}", mode: 'copy'
 
+	script:
+	"""
+	${params.dorado_path} basecaller ${model_acc} ${pod5_dir} \\
+	--kit-name ${kit_name} > ${output_bam}
+	"""
+}
+
+process samtools_filter {
+        input:
+        file output_bam
+        val min
+        val max
+
+        output:
+        file "*.bam"	
+                 
+        publishDir "${params.output_dir}", mode: 'copy'
+        
+        script:        
+    """
+    if [ "$max" != ".na" ]; then
+        samtools view \\
+            -h \\
+            -e 'length(seq)>=${min} && length(seq)<=${max}' \\
+            -o ${output_bam.simpleName}_${min}_${max}.bam \\
+            ${output_bam}
+    else
+        samtools view \\
+            -h \\
+            -e 'length(seq)>=${min}' \\
+            -o ${output_bam.simpleName}_${min}.bam \\
+            ${output_bam}
+    fi
+    """
+
+}
+
+process demux {
+    input:
+	file output_bam
+
+	output:
+	path 'bams'
+	
+    	publishDir "${params.output_dir}", mode: 'copy'
+
+	script:
+	"""
+	${params.dorado_path} demux \\
+	--output-dir bams \\
+	--no-classify \\
+	${output_bam}
+	"""
+}
+
+process bam_to_fastq { 
+	input: 
+	path bam_dir 
+	
+	output: 
+	path "fastqs" 
+	
+	publishDir "${params.output_dir}", mode: 'copy'
+	
+	script: 
+	""" 
+	mkdir -p fastqs 
+
+	for file in ${bam_dir}/*.bam; do
+		base=\$(basename "\$file" .bam) 
+		new_name=\$(echo "\$base" | rev | cut -d'_' -f1 | rev)
+
+		cp "\$file" "${params.output_dir}/bams/\${new_name}.bam"
+
+		samtools fastq "${params.output_dir}/bams/\${new_name}.bam" > fastqs/\${new_name}.fastq
+
+	done 
+
+	find fastqs -type f -name "*.fastq" -exec gzip {} \\;  	
+	"""
+}
+
+process create_visualizations {
+	input:
+	path fastq_dir
+
+	output:
+    path 'visualizations/LengthvsQualityScatterPlot_dot.html'
+    path 'visualizations/NanoStats.txt'
+    path 'visualizations/NanoComp_lengths_violin.html'
+    path 'visualizations/Non_weightedHistogramReadlength.html'
+    path 'visualizations/NanoComp_quals_violin.html'
+
+	publishDir "${params.output_dir}", mode: 'copy'
+
+	script:
+	"""
+	mkdir -p visualizations
+	
+	if [ -f "${fastq_dir}/unclassified.fastq.gz" ]; then
+    		rm "${fastq_dir}/unclassified.fastq.gz"
+    	fi
+	
+	NAMES=""
+for file in fastqs/*.fastq.gz; do
+    basename=\$(basename "\$file" .fastq.gz)
+    barcode_num=\$(echo "\$basename" | grep -o 'barcode[0-9]*' | sed 's/barcode//')
+
+    if [ -z "\$NAMES" ]; then
+        NAMES="\$barcode_num"
+    else
+        NAMES="\$NAMES \$barcode_num"
+    fi
+done
+
+	
+	NanoPlot \\
+	--fastq ${fastq_dir}/*.fastq.gz \\
+	--outdir visualizations \\
+	--plots dot \\
+	--no_static \\
+	--no_supplementary
+
+    NanoComp \\
+        --fastq ${fastq_dir}/*.fastq.gz \\
+        --outdir visualizations \\
+        --plot violin \\
+        --names \$NAMES
+
+    """
+}
+
+workflow visualize { 
+	main: 
+	fastq_files = Channel.fromPath("${params.fastq_dir}", type: 'dir') 
+	create_visualizations(fastq_files) 
+}
+
+workflow {
+	if (params.using_custom) {
+		basecall_out = basecall_custom(params.model_acc, 
+			params.kit_name, 
+			params.output_bam, 
+			params.pod5_dir, 
+			params.barcode_arrangement, 
+			params.barcode_sequences)
+ 	}  else {
+ 		basecall_out = basecall_kit(params.model_acc, 
+ 			params.kit_name, 
+ 			params.output_bam, 
+ 			params.pod5_dir)
+ 		}
+ 			
+	samtools_filter_out = samtools_filter(basecall_out, params.min, params.max)
+	demux_out = demux(samtools_filter_out)
+	bam_to_fastq_out = bam_to_fastq(demux_out)
+	create_visualizations(bam_to_fastq_out)     
+}
